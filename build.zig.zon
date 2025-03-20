@@ -1,0 +1,23 @@
+.{
+    .name = .http_client,
+    .version = "0.0.0",
+    .fingerprint = 0xdc36dc929455d39b, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.14.0",
+    .dependencies = .{
+        .zig_open = .{
+            .url = "git+https://github.com/Tired-Fox/zig-open?ref=main#0239c48cf72b307385cf8d210c52ef1e834a724b",
+            .hash = "zig_open-0.0.0-RAkOIF8dAACllzlqJe5c9iXEhT8CssXKfKK81as4S0cn",
+        },
+        .dotenvy = .{
+            .url = "git+https://github.com/Tired-Fox/dotenvy?ref=main#c43c40cd2ba9d46648800b9d033e33fab66a49ab",
+            .hash = "dotenvy-0.0.1-V7dI1g4VAAC3RQEDPgi0h-O52x1aIToH6xOODd6O6jAA",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "LICENSE",
+        "README.md",
+    },
+}
