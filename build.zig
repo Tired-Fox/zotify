@@ -7,6 +7,14 @@ pub fn build(b: *std.Build) void {
     const open = b.dependency("zig_open", .{}).module("open");
     const dotenvy = b.dependency("dotenvy", .{}).module("dotenvy");
 
+    const module = b.addModule("zotify", .{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    module.addImport("open", open);
+    module.addImport("dotenvy", dotenvy);
+
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -14,6 +22,7 @@ pub fn build(b: *std.Build) void {
     });
     exe_mod.addImport("open", open);
     exe_mod.addImport("dotenvy", dotenvy);
+    exe_mod.addImport("zotify", module);
 
     const exe = b.addExecutable(.{
         .name = "zotify",
