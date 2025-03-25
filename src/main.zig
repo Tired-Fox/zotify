@@ -9,11 +9,8 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
     defer _ = gpa.deinit();
 
-    var oauth = try OAuth.initEnv(gpa.allocator(), .pkce);
+    var oauth = try OAuth.initEnv(gpa.allocator(), .pkce, .{ .cache_path = "zotify/token.json" });
     defer oauth.deinit();
 
-    print("ID: {s}\n", .{ oauth.creds.id });
-    print("SECRET: {s}\n", .{ oauth.creds.secret });
-
-    try oauth.handshake();
+    try oauth.refresh();
 }

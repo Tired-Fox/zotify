@@ -6,6 +6,7 @@ pub fn build(b: *std.Build) void {
 
     const open = b.dependency("zig_open", .{}).module("open");
     const dotenvy = b.dependency("dotenvy", .{}).module("dotenvy");
+    const known_folders = b.dependency("known_folders", .{}).module("known-folders");
 
     const module = b.addModule("zotify", .{
         .root_source_file = b.path("src/root.zig"),
@@ -14,6 +15,7 @@ pub fn build(b: *std.Build) void {
     });
     module.addImport("open", open);
     module.addImport("dotenvy", dotenvy);
+    module.addImport("known-folders", known_folders);
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -22,6 +24,7 @@ pub fn build(b: *std.Build) void {
     });
     exe_mod.addImport("open", open);
     exe_mod.addImport("dotenvy", dotenvy);
+    exe_mod.addImport("known-folders", known_folders);
     exe_mod.addImport("zotify", module);
 
     const exe = b.addExecutable(.{
