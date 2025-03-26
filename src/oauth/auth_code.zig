@@ -108,7 +108,7 @@ pub const AuthCodeFlow = struct {
             defer response.deinit();
 
             if (response.status() == .ok) {
-                return try response.body(allocator, 8192);
+                return try response.body(allocator);
             } else {
                 return error.AccessDenied;
             }

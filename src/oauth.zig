@@ -303,12 +303,6 @@ pub const OAuth = struct {
         /// This also allows for the token to be loaded from the cache
         /// during the first token refresh.
         cache_path: ?[]const u8,
-        /// Determine if the token should be automatically refreshed when
-        /// making API calls.
-        ///
-        /// Defaults to true, and if it is set to false the caller is responsible
-        /// for calling refresh when needed before any API calls.
-        auto_refresh: bool = true,
     };
 
     pub const Flow = enum {
@@ -358,7 +352,6 @@ pub const OAuth = struct {
                 .scopes = if (flow == .credential) .{} else options.scopes,
                 .redirect_content = options.redirect_content,
                 .cache_path = options.cache_path,
-                .auto_refresh = options.auto_refresh,
             },
         };
     }
@@ -410,7 +403,6 @@ pub const OAuth = struct {
                 .scopes = if (flow == .credential) .{} else options.scopes,
                 .redirect_content = options.redirect_content,
                 .cache_path = options.cache_path,
-                .auto_refresh = options.auto_refresh,
             },
         };
     }
@@ -484,12 +476,12 @@ pub const OAuth = struct {
         defer response.deinit();
 
         if (response.status() == .ok) {
-            const body = try response.body(allocator, 8192);
+            const body = try response.body(allocator);
             defer allocator.free(body);
 
             try self.token.?.mergeResponse(allocator, body);
         } else {
-            const body = try response.body(allocator, 8192);
+            const body = try response.body(allocator);
             defer allocator.free(body);
 
             std.debug.print("{s}\n", .{body});

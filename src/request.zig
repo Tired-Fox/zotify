@@ -453,6 +453,7 @@ pub const Response = struct {
 
     /// Free all memory related to the response
     pub fn deinit(self: *@This()) void {
+        self.request.deinit();
         self.arena.deinit();
     }
 
@@ -469,17 +470,25 @@ pub const Response = struct {
     /// Read the body of the response as text.
     ///
     /// Caller owns the memory and is repsonsible for freeing it.
-    pub fn body(self: *@This(), allocator: std.mem.Allocator, max: usize) ![]const u8 {
-        return try self.request
-            .reader()
-            .readAllAlloc(allocator, @intCast(self.response.content_length orelse max));
+    pub fn body(self: *@This(), allocator: std.mem.Allocator) ![]const u8 {
+        if (self.response.content_length) |clen| {
+            return try self.request
+                .reader()
+                .readAllAlloc(allocator, @intCast(clen));
+        }
+        var buffer = std.ArrayList(u8).init(allocator);
+        var reader = self.request.reader();
+        while (true) {
+            try buffer.append(reader.readByte() catch break);
+        }
+        return try buffer.toOwnedSlice();
     }
 
     /// Read the body of the response as json.
     ///
     /// Caller owns the memory and is repsonsible for freeing it.
     pub fn json(self: *@This(), allocator: std.mem.Allocator, T: type) !std.json.Parsed(T) {
-        const content = try self.body(allocator, 8192);
+        const content = try self.body(allocator);
         defer allocator.free(content);
 
         return try std.json.parseFromSlice(T, allocator, content, .{ .ignore_unknown_fields = true });
@@ -489,7 +498,7 @@ pub const Response = struct {
     ///
     /// Caller owns the memory and is repsonsible for freeing it.
     pub fn form(self: *@This(), allocator: std.mem.Allocator) !QueryMapUnmanaged {
-        const content = try self.body(allocator, 8192);
+        const content = try self.body(allocator);
         defer allocator.free(content);
 
         return try QueryMapUnmanaged.parse(allocator, content, .{});
