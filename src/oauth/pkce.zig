@@ -11,7 +11,7 @@ const Credentials = oauth.Credentials;
 const Callback = oauth.Callback;
 const Token = oauth.Token;
 
-pub fn PKCE(N: usize) type {
+pub fn PkceFlow(N: usize) type {
     std.debug.assert(N > 42 and N < 129);
 
     const Sha256 = std.crypto.hash.sha2.Sha256;

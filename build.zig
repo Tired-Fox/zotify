@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const examples = [_]Example {
-    .{ .name = "basic-refresh", .path = "examples/basic-refresh.zig",  },
+    .{ .name = "basic-refresh", .path = "examples/basic_refresh.zig",  },
 };
 
 pub fn build(b: *std.Build) void {

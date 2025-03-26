@@ -10,7 +10,7 @@ const randString = oauth.randString;
 const Credentials = oauth.Credentials;
 const Token = oauth.Token;
 
-pub const AuthCode = struct {
+pub const AuthCodeFlow = struct {
     pub fn handshake(allocator: std.mem.Allocator, creds: *const Credentials, redirect: []const u8, options: *const oauth.OAuth.Options) ![]const u8 {
         const redirect_uri = try std.Uri.parse(redirect);  
         if (

@@ -6,8 +6,9 @@ const json = @import("json");
 
 const log = std.log.scoped(.zotify_oauth);
 
-const PKCE = @import("oauth/pkce.zig").PKCE;
-const AuthCode = @import("oauth/auth_code.zig").AuthCode;
+const PkceFlow = @import("oauth/pkce.zig").PkceFlow;
+const AuthCodeFlow = @import("oauth/auth_code.zig").AuthCodeFlow;
+const CredentialFlow = @import("oauth/credential.zig").CredentialFlow;
 
 pub fn randString(comptime N: usize, needle: []const u8) [N]u8 {
     // Valid lengths are 43-128
@@ -22,23 +23,25 @@ pub fn randString(comptime N: usize, needle: []const u8) [N]u8 {
 
 pub const Credentials = struct {
     id: []const u8,
-    secret: []const u8,
+    secret: ?[]const u8,
 
-    pub fn init(id: []const u8, secret: []const u8) @This() {
+    pub fn init(id: []const u8, secret: ?[]const u8) @This() {
         return .{ .id = id, .secret = secret };
     }
 };
 
 pub const Token = struct {
     access: []const u8,
-    refresh: []const u8,
+    refresh: ?[]const u8,
     scopes: Scopes,
     expires: i64,
 
     pub fn toJson(self: *@This(), writer: anytype) !void {
         try writer.writeByte('{');
         try writer.print("\"access\":\"{s}\",", .{ self.access });
-        try writer.print("\"refresh\":\"{s}\",", .{ self.refresh });
+        if (self.refresh) |refresh| {
+            try writer.print("\"refresh\":\"{s}\",", .{ refresh });
+        }
         try writer.print("\"expires\":{d},", .{ self.expires });
         try writer.writeAll("\"scopes\":[");
         var count: usize = 0;
@@ -56,7 +59,7 @@ pub const Token = struct {
         const result = try std.json.parseFromSlice(
             struct {
                 access: []const u8,
-                refresh: []const u8,
+                refresh: ?[]const u8 = null,
                 scopes: [][]const u8,
                 expires: i64,
             },
@@ -75,7 +78,7 @@ pub const Token = struct {
 
         token.* = .{
             .access = try allocator.dupe(u8, result.value.access),
-            .refresh = try allocator.dupe(u8, result.value.refresh),
+            .refresh = if (result.value.refresh) |refresh| try allocator.dupe(u8, refresh) else null,
             .scopes = scopes,
             .expires = result.value.expires,
         };
@@ -88,13 +91,13 @@ pub const Token = struct {
 
         const result = try std.json.parseFromSlice(struct {
             access_token: []const u8,
-            refresh_token: ?[]const u8,
+            refresh_token: ?[]const u8 = null,
             expires_in: i64,
         }, allocator, content, .{ .ignore_unknown_fields = true });
         defer result.deinit();
 
         if (result.value.refresh_token) |rt| {
-            allocator.free(self.refresh);
+            if (self.refresh) |refresh| allocator.free(refresh);
             self.refresh = try allocator.dupe(u8, rt);
         }
 
@@ -109,7 +112,7 @@ pub const Token = struct {
 
         const result = try std.json.parseFromSlice(struct {
             access_token: []const u8,
-            refresh_token: []const u8,
+            refresh_token: ?[]const u8 = null,
             expires_in: i64,
             scope: ?[]const u8 = null
         }, allocator, content, .{ .ignore_unknown_fields = true });
@@ -127,7 +130,7 @@ pub const Token = struct {
 
         token.* = .{
             .access = try allocator.dupe(u8, result.value.access_token),
-            .refresh = try allocator.dupe(u8, result.value.refresh_token),
+            .refresh = if (result.value.refresh_token) |refresh| try allocator.dupe(u8, refresh) else null,
             .scopes = scopes,
             .expires = now + result.value.expires_in,
         };
@@ -137,7 +140,7 @@ pub const Token = struct {
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.access);
-        allocator.free(self.refresh);
+        if (self.refresh) |refresh| allocator.free(refresh);
         allocator.destroy(self);
     }
 
@@ -309,10 +312,12 @@ pub const OAuth = struct {
     };
 
     pub const Flow = enum {
+        /// Does not require a client secret to be stored
         pkce,
-        code,
+        /// Requires both client id and client secret to be stored
+        auth_code,
+        /// Requires both client id and client secret to be stored
         credential,
-        implicit,
     };
 
     pub fn init(allocator: std.mem.Allocator, flow: Flow, creds: Credentials, redirect: []const u8, options: Options) @This() {
@@ -349,7 +354,12 @@ pub const OAuth = struct {
             .creds = creds,
             .token = token,
             .redirect = redirect,
-            .options = options,
+            .options = .{
+                .scopes = if (flow == .credential) .{} else options.scopes,
+                .redirect_content = options.redirect_content,
+                .cache_path = options.cache_path,
+                .auto_refresh = options.auto_refresh,
+            },
         };
     }
 
@@ -361,7 +371,7 @@ pub const OAuth = struct {
         defer env_vars.deinit();
 
         const id = if (env_vars.get("ZOTIFY_CLIENT_ID")) |id| try allo.dupe(u8, id) else return error.MissingZotifyClientId;
-        const secret = if (env_vars.get("ZOTIFY_CLIENT_SECRET")) |secret| try allo.dupe(u8, secret) else return error.MissingZotifyClientSecret;
+        const secret = if (env_vars.get("ZOTIFY_CLIENT_SECRET")) |secret| try allo.dupe(u8, secret) else null;
         const redirect_var = env_vars.get("ZOTIFY_REDIRECT_URI") orelse return error.MissingZotifyRedirectUri;
 
         const token: ?*Token = cache: {
@@ -396,7 +406,12 @@ pub const OAuth = struct {
             .creds = Credentials.init(id, secret),
             .token = token,
             .redirect = redirect,
-            .options = options,
+            .options = .{
+                .scopes = if (flow == .credential) .{} else options.scopes,
+                .redirect_content = options.redirect_content,
+                .cache_path = options.cache_path,
+                .auto_refresh = options.auto_refresh,
+            },
         };
     }
 
@@ -432,10 +447,14 @@ pub const OAuth = struct {
             try self.fetchToken();
             try self.saveToken();
         } else if (self.token.?.expires <= std.time.timestamp()) {
-            self.refreshToken() catch |err| switch (err) {
-                error.InvalidGrant => { try self.fetchToken(); },
-                else => return err,
-            };
+            if (self.token.?.refresh == null) {
+                try self.fetchToken();
+            } else {
+                self.refreshToken() catch |err| switch (err) {
+                    error.InvalidGrant => { try self.fetchToken(); },
+                    else => return err,
+                };
+            }
             try self.saveToken();
         }
     }
@@ -447,12 +466,14 @@ pub const OAuth = struct {
         var req = try request.Request.post(allocator, "https://accounts.spotify.com/api/token", &.{});
         defer req.deinit();
 
-        try req.basicAuth(self.creds.id, self.creds.secret);
+        if (self.flow == .auth_code) {
+            try req.basicAuth(self.creds.id, self.creds.secret.?);
+        }
 
         {
             var params = request.QueryMap.init(allocator);
             try params.put("grant_type", "refresh_token");
-            try params.put("refresh_token", self.token.?.refresh);
+            try params.put("refresh_token", self.token.?.refresh.?);
             try params.put("client_id", self.creds.id);
             defer params.deinit();
 
@@ -481,7 +502,7 @@ pub const OAuth = struct {
         log.debug("fetching new auth token", .{});
         switch (self.flow) {
             .pkce => {
-                const flow = try PKCE(67).init();
+                const flow = try PkceFlow(67).init();
                 const allocator = self.arena.allocator();
 
                 const token = try flow.handshake(allocator, &self.creds, self.redirect, &self.options);
@@ -490,16 +511,24 @@ pub const OAuth = struct {
                 if (self.token) |t| t.deinit(allocator);
                 self.token = try Token.fromResponse(allocator, token);
             },
-            .code => {
+            .auth_code => {
                 const allocator = self.arena.allocator();
 
-                const token = try AuthCode.handshake(allocator, &self.creds, self.redirect, &self.options);
+                const token = try AuthCodeFlow.handshake(allocator, &self.creds, self.redirect, &self.options);
                 defer allocator.free(token);
 
                 if (self.token) |t| t.deinit(allocator);
                 self.token = try Token.fromResponse(allocator, token);
             },
-            else => return error.AuthenticationMethodNotImplemented,
+            .credential => {
+                const allocator = self.arena.allocator();
+
+                const token = try CredentialFlow.handshake(allocator, &self.creds);
+                defer allocator.free(token);
+
+                if (self.token) |t| t.deinit(allocator);
+                self.token = try Token.fromResponse(allocator, token);
+            }
         }
     }
 };
