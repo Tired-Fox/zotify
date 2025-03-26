@@ -8,6 +8,7 @@ const request = @import("../request.zig");
 
 const randString = oauth.randString;
 const Credentials = oauth.Credentials;
+const Callback = oauth.Callback;
 const Token = oauth.Token;
 
 pub fn PKCE(N: usize) type {
@@ -53,8 +54,16 @@ pub fn PKCE(N: usize) type {
             return std.mem.eql(u8, &self.state, other);
         }
 
-        pub fn handshake(self: *const @This(), allocator: std.mem.Allocator, creds: *const Credentials) ![]const u8 {
-            const address = std.net.Address.parseIp("127.0.0.1", 8000) catch unreachable;
+        pub fn handshake(self: *const @This(), allocator: std.mem.Allocator, creds: *const Credentials, redirect: []const u8, options: *const oauth.OAuth.Options) ![]const u8 {
+            const redirect_uri = try std.Uri.parse(redirect);  
+            if (
+                !std.mem.eql(u8, redirect_uri.host.?.percent_encoded, "localhost")
+                and !std.mem.eql(u8, redirect_uri.host.?.percent_encoded, "127.0.0.1")
+            ) {
+                return error.RedirectHostMustBeLocalhost;
+            }
+
+            const address = std.net.Address.parseIp("127.0.0.1", redirect_uri.port.?) catch unreachable;
             var server = try address.listen(.{});
 
             const auth_req = req: {
@@ -62,11 +71,11 @@ pub fn PKCE(N: usize) type {
                 defer params.deinit();
                 try params.put("client_id", creds.id);
                 try params.put("response_type", "code");
-                try params.put("redirect_uri", "http://localhost:8000/zotify/pkce");
+                try params.put("redirect_uri", redirect);
                 try params.put("state", &self.state);
                 try params.put("code_challenge_method", "S256");
                 try params.put("code_challenge", &self.challenge);
-                try params.put("scope", "user-read-playback-state");
+                try params.put("scope", options.scopes);
 
                 break :req try std.fmt.allocPrint(
                     allocator,
@@ -77,9 +86,7 @@ pub fn PKCE(N: usize) type {
             defer allocator.free(auth_req);
             try open.that(auth_req);
 
-            log.info("waiting for request at 127.0.0.1:8000/zotify/pkce", .{});
-
-            var buffer: [1024]u8 = undefined;
+            var buffer: [8192]u8 = undefined;
             var conn = std.http.Server.init(try server.accept(), &buffer);
             defer conn.connection.stream.close();
 
@@ -88,14 +95,15 @@ pub fn PKCE(N: usize) type {
 
             var code: ?[]const u8 = null;
             defer if (code) |c| allocator.free(c);
-            if (std.mem.startsWith(u8, target, "/zotify/pkce?")) {
-                try req.respond("{ status: \"okay\" }", .{
-                    .extra_headers = &.{
-                        .{ .name = "ContentType", .value = "application/json" }
-                    }
-                });
+            if (std.mem.startsWith(u8, target, redirect_uri.path.percent_encoded)) {
+                try req.respond(options.redirect_content orelse oauth.REDIRECT_CONTENT, .{});
 
-                const url = try std.fmt.allocPrint(allocator, "http://127.0.0.1:8000{s}", .{ target });
+                const url = try std.fmt.allocPrint(allocator, "{s}://{s}:{d}{s}", .{
+                    redirect_uri.scheme,
+                    redirect_uri.host.?.percent_encoded,
+                    redirect_uri.port.?,
+                    target,
+                });
                 defer allocator.free(url);
                 const uri = try std.Uri.parse(url);
 
@@ -110,7 +118,7 @@ pub fn PKCE(N: usize) type {
                         if (std.mem.eql(u8, e, "access_denied")) {
                             return error.AccessDenied;
                         }
-                        return error.AuthorizationError;
+                        return error.Authentication;
                     }
 
                     code = try allocator.dupe(u8, query.get("code").?);
@@ -125,45 +133,33 @@ pub fn PKCE(N: usize) type {
             }
 
             if (code) |c| {
-                var params = request.QueryMap.init(allocator);
-                try params.put("grant_type", "authorization_code");
-                try params.put("code", c);
-                try params.put("redirect_uri", "http://localhost:8000/zotify/pkce");
-                try params.put("state", &self.state);
-                try params.put("client_id", creds.id);
-                try params.put("code_verifier", &self.verifier);
-                defer params.deinit();
+                var token_req = try request.Request.post(allocator, "https://accounts.spotify.com/api/token", &.{});
+                defer token_req.deinit();
 
-                const uri = "https://accounts.spotify.com/api/token";
-                var client = std.http.Client { .allocator = allocator };
-                defer client.deinit();
+                {
+                    var params = request.QueryMap.init(allocator);
+                    try params.put("grant_type", "authorization_code");
+                    try params.put("code", c);
+                    try params.put("redirect_uri", redirect);
+                    try params.put("state", &self.state);
+                    try params.put("client_id", creds.id);
+                    try params.put("code_verifier", &self.verifier);
+                    defer params.deinit();
 
-                var server_headers: [1024 * 1024]u8 = undefined;
-                var r = try client.open(.POST, try std.Uri.parse(uri), .{
-                    .extra_headers = &.{
-                        .{ .name = "Content-Type", .value = "application/x-www-form-urlencoded" }
-                    },
-                    .server_header_buffer = &server_headers
-                });
-                defer r.deinit();
+                    try token_req.form(&params);
+                }
 
+                var response = try token_req.send(allocator);
+                defer response.deinit();
 
-                r.transfer_encoding = .chunked;
-                try r.send();
-                try r.writer().print("{s}", .{ params });
-                try r.finish();
-
-                try r.wait();
-                const response = r.response;
-
-                if (response.status == .ok) {
-                    return try r.reader().readAllAlloc(allocator, @intCast(response.content_length orelse 8192));
+                if (response.status() == .ok) {
+                    return try response.body(allocator, 8192);
                 } else {
-                    return error.ErrorFetchingAuthenticationToken;
+                    return error.AccessDenied;
                 }
             }
 
-            return error.ErrorFetchingAuthenticationToken;
+            return error.Authentication;
         }
     };
 }
