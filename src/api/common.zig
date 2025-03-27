@@ -1,0 +1,118 @@
+const std = @import("std");
+
+pub fn Result(T: type) type {
+    return struct {
+        arena: std.heap.ArenaAllocator,
+        value: T,
+
+        pub fn deinit(self: @This()) void {
+            self.arena.deinit();
+        }
+
+        /// The caller owns the memory and is responsible for freeing it
+        pub fn fromJsonLeaky(allocator: std.mem.Allocator, content: []const u8) !@This() {
+            var arena = std.heap.ArenaAllocator.init(allocator);
+            errdefer arena.deinit();
+            const allo = arena.allocator();
+
+            const parsed = try std.json.parseFromSlice(std.json.Value, allo, content, .{ .ignore_unknown_fields = true });
+            defer parsed.deinit();
+
+            return .{
+                .value = try std.json.parseFromValueLeaky(
+                    T,
+                    allo,
+                    parsed.value,
+                    .{ .ignore_unknown_fields = true }
+                ),
+                .arena = arena,
+            };
+        }
+
+        /// The caller owns the memory and is responsible for freeing it
+        pub fn fromWrappedJsonLeaky(inner: @Type(.enum_literal), allocator: std.mem.Allocator, content: []const u8) !@This() {
+            var arena = std.heap.ArenaAllocator.init(allocator);
+            errdefer arena.deinit();
+            const allo = arena.allocator();
+
+            const parsed = try std.json.parseFromSlice(std.json.Value, allo, content, .{ .ignore_unknown_fields = true });
+            defer parsed.deinit();
+
+            if (parsed.value != .object) return error.UnexpectedToken;
+            const data = parsed.value.object.get(@tagName(inner)) orelse return error.MissingField;
+
+            return .{
+                .value = try std.json.parseFromValueLeaky(
+                    T,
+                    allo,
+                    data,
+                    .{ .ignore_unknown_fields = true }
+                ),
+                .arena = arena,
+            };
+        }
+    };
+}
+
+pub const ExternalUrls = struct {
+    spotify: []const u8,
+
+    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.spotify);
+    }
+};
+
+pub const DatePrecision = enum {
+    day,
+    month,
+    year,
+};
+
+pub const Reason = enum {
+    market,
+    product,
+    explicit,
+};
+
+pub fn Map(T: type) type {
+    return struct {
+        inner: std.StringArrayHashMap(T),
+
+        pub fn jsonStringify(self: *const @This(), writer: anytype) !void {
+            try writer.beginObject();
+            var it = self.inner.iterator();
+            while (it.next()) |entry| {
+                try writer.objectField(entry.key_ptr.*);
+                try writer.write(entry.value_ptr.*);
+            }
+            try writer.endObject();
+        }
+
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) std.json.ParseFromValueError!@This() {
+            if (source != .object) return error.UnexpectedToken;
+
+            var restrictions = std.StringArrayHashMap(T).init(allocator);
+            var it = source.object.iterator();
+
+            while (it.next()) |entry| {
+                const key = try allocator.alloc(u8, entry.key_ptr.len);
+                @memcpy(key, entry.key_ptr.*);
+
+                try restrictions.put(
+                    key,
+                    try std.json.innerParseFromValue(T, allocator, entry.value_ptr.*, options)
+                );
+            }
+
+            return .{
+                .inner = restrictions
+            };
+        }
+    };
+}
+
+pub const Image = struct {
+    url: []const u8,
+    height: usize,
+    width: usize,
+};

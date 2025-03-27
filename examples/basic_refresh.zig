@@ -11,9 +11,11 @@ pub fn main() !void {
     // Create a general purpose allocator
     var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
     defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
     var client = SpotifyClient {
-        .oauth = try OAuth.initEnv(gpa.allocator(), .pkce, .{
+        .allocator = allocator,
+        .oauth = try OAuth.initEnv(allocator, .pkce, .{
             .cache_path = "zotify/token.json",
             .redirect_content = CONTENT,
             .scopes = .{
@@ -24,12 +26,15 @@ pub fn main() !void {
     };
     defer client.deinit();
 
-    const result = try client.getPlaybackState(gpa.allocator(), .{});
-    defer if (result) |state| gpa.allocator().free(state);
+    const devices = try client.getDevices(allocator);
+    defer devices.deinit();
 
-    if (result) |state| {
-        std.debug.print("{s}\n", .{state});
-    } else {
-        std.debug.print("No Playback\n", .{});
-    }
+    try std.json.stringify(devices.value, .{ .whitespace = .indent_2 }, std.io.getStdOut().writer());
+
+    const first = devices.value[0];
+    const second = devices.value[1];
+
+    try client.transferPlayback(first.id.?, true);
+    std.time.sleep(std.time.ns_per_s * 3);
+    try client.transferPlayback(second.id.?, true);
 }

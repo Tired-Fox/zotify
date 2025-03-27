@@ -102,13 +102,13 @@ pub const QueryMapUnmanaged = struct {
         self.items.deinit(allocator);
     }
 
-    pub fn put(self: *@This(), allocator: std.mem.Allocator, key: []const u8, value: []const u8) !void {
+    pub fn put(self: *@This(), allocator: std.mem.Allocator, key: []const u8, value: anytype) !void {
         const entry = try self.items.getOrPut(allocator, try allocator.dupe(u8, key));
         if (entry.found_existing) {
             allocator.free(entry.value_ptr.*);
         }
 
-        entry.value_ptr.* = try allocator.dupe(u8, value);
+        entry.value_ptr.* = try std.fmt.allocPrint(allocator, "{s}", .{ value });
     }
 
     pub fn get(self: *@This(), key: []const u8) ?[]const u8 {
@@ -307,6 +307,7 @@ pub const Request = struct {
 
     pub fn init(allocator: std.mem.Allocator, method: std.http.Method, uri: []const u8, headers: []const std.http.Header) !@This() {
         var arena = std.heap.ArenaAllocator.init(allocator);
+        errdefer arena.deinit();
 
         var h = std.ArrayListUnmanaged(std.http.Header).empty;
         try h.appendSlice(arena.allocator(), headers);
@@ -329,6 +330,10 @@ pub const Request = struct {
 
     pub fn post(allocator: std.mem.Allocator, uri: []const u8, headers: []const std.http.Header) !@This() {
         return try @This().init(allocator, .POST, uri, headers);
+    }
+
+    pub fn put(allocator: std.mem.Allocator, uri: []const u8, headers: []const std.http.Header) !@This() {
+        return try @This().init(allocator, .PUT, uri, headers);
     }
 
     /// Add a query parameter to the uri
@@ -405,6 +410,7 @@ pub const Request = struct {
     /// so that this request instance can have `deinit` called.
     pub fn send(self: *@This(), alloc: std.mem.Allocator) !Response {
         var arena = std.heap.ArenaAllocator.init(alloc);
+        errdefer arena.deinit();
         const allocator = arena.allocator();
 
         var client = std.http.Client { .allocator = allocator };
@@ -429,11 +435,9 @@ pub const Request = struct {
             .extra_headers = headers 
         });
 
-        req.transfer_encoding = .chunked;
+        if (self.content != null ) req.transfer_encoding = .chunked;
         try req.send();
-        if (self.content) |content| {
-            try req.writer().writeAll(content);
-        }
+        if (self.content) |content| try req.writer().writeAll(content);
         try req.finish();
         try req.wait();
 
