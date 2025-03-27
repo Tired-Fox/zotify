@@ -23,3 +23,6 @@ pub fn build(b: *std.build) void {
   exe_mode.addimport("zotify", zotify);
 }
 ```
+
+> Youtube Music API:
+> Reference: https://github.com/sigma67/ytmusicapi

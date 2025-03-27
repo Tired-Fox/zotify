@@ -38,17 +38,23 @@ pub const Repeat = enum {
     off,
     track,
     context,
-};
 
-pub const ContextType = enum {
-    ablum,
-    playlist,
-    show,
-    artist
+    pub fn format(
+        self: *const @This(),
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        switch (self.*) {
+            .off => try writer.writeAll("off"),
+            .track => try writer.writeAll("track"),
+            .context => try writer.writeAll("context"),
+        }
+    }
 };
 
 pub const Context = struct {
-    type: ContextType,
+    type: common.Resource,
     href: []const u8,
     external_url: ?common.ExternalUrls = null,
     uri: []const u8,
@@ -63,6 +69,18 @@ pub const Item = union(enum) {
             .track => |track| try writer.write(track),
             .episode => |episode| try writer.write(episode),
         }
+    }
+
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) std.json.ParseFromValueError!@This() {
+        if (source != .object) return error.UnexpectedToken;
+        if (std.mem.eql(u8, source.object.get("type").?.string, "track")) {
+            return .{
+                .track = try std.json.innerParseFromValue(Track, allocator, source, options),
+            };
+        }
+        return .{
+            .episode = try std.json.innerParseFromValue(Episode, allocator, source, options),
+        };
     }
 };
 
@@ -112,12 +130,13 @@ pub const CurrentlyPlayingType = enum {
 
 pub const PlayerState = struct {
     device: Device,
-    repeat: Repeat,
-    shuffle: bool,
+    repeat_state: Repeat,
+    shuffle_state: bool,
     context: ?Context,
     timestamp: i64,
-    progress: ?usize,
-    playing: bool,
+    progress_ms: ?usize,
+    is_playing: bool,
+    currently_playing_type: CurrentlyPlayingType,
     item: ?Item,
     actions: Actions,
 
@@ -130,51 +149,53 @@ pub const PlayerState = struct {
             try writer.objectField("timestamp"); try writer.write(self.timestamp);
             try writer.objectField("progress"); try writer.write(self.progress);
             try writer.objectField("playing"); try writer.write(self.playing);
-            try writer.objectField("currently_playing_type"); try writer.write(if (self.item) |item| @tagName(std.meta.activeTag(item)) else "unknown");
+            try writer.objectField("currently_playing_type"); try writer.write(self.currently_playing_type);
             try writer.objectField("item"); try writer.write(self.item);
             try writer.objectField("actions"); try writer.write(self.actions);
         try writer.endObject();
     }
+};
 
-    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) std.json.ParseFromValueError!PlayerState {
-        const data = try std.json.innerParseFromValue(struct {
-            device: Device,
-            repeat_state: Repeat,
-            shuffle_state: bool,
-            context: ?Context,
-            timestamp: i64,
-            progress_ms: ?usize,
-            is_playing: bool,
-            actions: Actions,
-            currently_playing_type: CurrentlyPlayingType,
-            item: ?std.json.Value,
-        }, allocator, source, options);
+pub const StartResume = union(enum) {
+    context: struct {
+        uri: common.Uri,
+        offset: ?usize = null,
+    },
+    uris: [][]const u8,
 
-        return .{
-            .device = data.device,
-            .repeat = data.repeat_state,
-            .shuffle = data.shuffle_state,
-            .context = data.context,
-            .timestamp = data.timestamp,
-            .progress = data.progress_ms,
-            .playing = data.is_playing,
-            .actions = data.actions,
-            .item = item: {
-                if (data.item) |item| {
-                    switch (data.currently_playing_type) {
-                        .track => {
-                            break :item .{ .track = try std.json.innerParseFromValue(Track, allocator, item, .{ .ignore_unknown_fields = true }) };
-                        },
-                        .episode => {
-                            break :item .{ .episode = try std.json.innerParseFromValue(Episode, allocator, item, .{ .ignore_unknown_fields = true }) };
-                        },
-                        .ad, .unknown => {
-                            break :item null;
-                        }
-                    }
+    pub fn jsonStringify(self: *const @This(), writer: anytype) !void {
+        try writer.beginObject();
+        switch (self.*) {
+            .context => |ctx| {
+                try writer.objectField("context_uri");
+                try writer.write(ctx.uri);
+
+                if (ctx.offset) |offset| {
+                    try writer.objectField("offset");
+                    try writer.write(offset);
                 }
-                break :item null;
             },
-        };
+            .uris => |uris| {
+                try writer.objectField("uris");
+                try writer.write(uris);
+            }
+        }
+        try writer.endObject();
     }
+};
+
+pub const PlayHistory = struct {
+    track: Track,
+    played_at: []const u8,
+    context: Context,
+};
+
+pub const RecentlyPlayed = union(enum) {
+    after: i64,
+    before: i64,
+};
+
+pub const Queue = struct {
+    currently_playing: Item,
+    queue: []Item,
 };

@@ -108,7 +108,17 @@ pub const QueryMapUnmanaged = struct {
             allocator.free(entry.value_ptr.*);
         }
 
-        entry.value_ptr.* = try std.fmt.allocPrint(allocator, "{s}", .{ value });
+        switch (@typeInfo(@TypeOf(value))) {
+            .float, .comptime_float, .comptime_int, .int => {
+                entry.value_ptr.* = try std.fmt.allocPrint(allocator, "{d}", .{ value });
+            },
+            .bool => {
+                entry.value_ptr.* = try std.fmt.allocPrint(allocator, "{?}", .{ value });
+            },
+            else => {
+                entry.value_ptr.* = try std.fmt.allocPrint(allocator, "{s}", .{ value });
+            }
+        }
     }
 
     pub fn get(self: *@This(), key: []const u8) ?[]const u8 {
@@ -372,20 +382,23 @@ pub const Request = struct {
         });
     }
 
+    pub fn header(self: *@This(), key: []const u8, value: []const u8) !void {
+        try self.headers.append(self.arena.allocator(), .{
+            .name = key,
+            .value = value,
+        });
+    }
+
     /// Format the content passed in as a string body with no additional `Content-Type` headers
     pub fn body(self: *@This(), content: anytype) !void {
-        if (self.content) |b| {
-            self.arena.allocator().free(b);
-        }
+        if (self.content) |b| self.arena.allocator().free(b);
         self.content = try std.fmt.allocPrint(self.arena.allocator(), "{s}", .{ content });
     }
 
     /// Format the content passed in as a string body with an addtional `Content-Type` header
     /// of `application/x-www-form-urlencoded`
     pub fn form(self: *@This(), content: anytype) !void {
-        if (self.content) |b| {
-            self.arena.allocator().free(b);
-        }
+        if (self.content) |b| self.arena.allocator().free(b);
         self.content = try std.fmt.allocPrint(self.arena.allocator(), "{s}", .{ content });
         try self.headers.append(self.arena.allocator(), .{ .name = "Content-Type", .value = "application/x-www-form-urlencoded" });
     }
@@ -393,10 +406,15 @@ pub const Request = struct {
     /// Format the content passed in as a string body with an addtional `Content-Type` header
     /// of `application/json`
     pub fn json(self: *@This(), content: anytype) !void {
-        if (self.content) |b| {
-            self.arena.allocator().free(b);
+        const T = @TypeOf(content);
+        if (self.content) |b| self.arena.allocator().free(b);
+
+        if (@typeInfo(T) == .@"struct" and @typeInfo(T).@"struct".fields.len == 0) {
+            self.content = "{}";
+        } else {
+            self.content = try std.json.stringifyAlloc(self.arena.allocator(), content, .{ });
         }
-        self.content = try std.json.stringifyAlloc(self.arena.allocator(), content, .{ });
+
         try self.headers.append(self.arena.allocator(), .{ .name = "Content-Type", .value = "application/json" });
     }
 
@@ -427,6 +445,15 @@ pub const Request = struct {
             break :uri try std.Uri.parse(try url.toOwnedSlice());
         };
 
+        if (self.method != .GET and self.method != .HEAD) {
+            try self.headers.append(allocator, .{
+                .name = "Content-Length",
+                .value = try std.fmt.allocPrint(allocator, "{d}", .{
+                    if (self.content) |cnt| cnt.len else 0
+                })
+            });
+        }
+
         const header_buffer = try allocator.alloc(u8, 8192);
         const headers = try self.headers.toOwnedSlice(allocator);
 
@@ -435,7 +462,10 @@ pub const Request = struct {
             .extra_headers = headers 
         });
 
-        if (self.content != null ) req.transfer_encoding = .chunked;
+        if (self.method != .GET and self.method != .HEAD) {
+            if (self.content) |cnt| req.transfer_encoding = .{ .content_length = cnt.len };
+        }
+
         try req.send();
         if (self.content) |content| try req.writer().writeAll(content);
         try req.finish();

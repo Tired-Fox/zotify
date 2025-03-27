@@ -1,5 +1,35 @@
 const std = @import("std");
 
+pub const Resource = enum {
+    ablum,
+    playlist,
+    show,
+    artist,
+    track,
+    episode,
+    user,
+    collection,
+    your_episodes,
+};
+
+pub const Uri = struct {
+    type: Resource,
+    uri: []const u8,
+
+    pub fn format(
+        self: *const @This(),
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        switch(self.type) {
+            .collection => try writer.print("spotify:user:{s}:collection", .{ self.uri }),
+            .your_episodes => try writer.print("spotify:user:{s}:collection:your-episodes", .{ self.uri }),
+            else => |other| try writer.print("spotify:{s}:{s}", .{ @tagName(other), self.uri }),
+        }
+    }
+};
+
 pub fn Result(T: type) type {
     return struct {
         arena: std.heap.ArenaAllocator,
@@ -116,3 +146,19 @@ pub const Image = struct {
     height: usize,
     width: usize,
 };
+
+pub const Cursors = struct {
+    before: i64,
+    after: i64,
+};
+
+pub fn Cursor(T: type) type {
+    return struct {
+        href: []const u8,
+        limit: u8,
+        items: []T,
+        next: ?[]const u8 = null,
+        total: ?usize = null,
+        cursors: ?Cursors = null,
+    };
+}

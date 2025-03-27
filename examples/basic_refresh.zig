@@ -26,15 +26,5 @@ pub fn main() !void {
     };
     defer client.deinit();
 
-    const devices = try client.getDevices(allocator);
-    defer devices.deinit();
-
-    try std.json.stringify(devices.value, .{ .whitespace = .indent_2 }, std.io.getStdOut().writer());
-
-    const first = devices.value[0];
-    const second = devices.value[1];
-
-    try client.transferPlayback(first.id.?, true);
-    std.time.sleep(std.time.ns_per_s * 3);
-    try client.transferPlayback(second.id.?, true);
+    try client.addItemToQueue(.{ .type = .track, .uri = "6EdnztPkhHINbu8Y9NgIIR" }, null);
 }
