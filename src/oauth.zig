@@ -358,6 +358,7 @@ pub const OAuth = struct {
 
     pub fn initEnv(allocator: std.mem.Allocator, flow: Flow, options: Options) !@This() {
         var arena = std.heap.ArenaAllocator.init(allocator);
+        errdefer arena.deinit();
         const allo = arena.allocator();
 
         var env_vars = try dotenvy.parse(allo, null);

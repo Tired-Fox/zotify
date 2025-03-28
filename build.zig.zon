@@ -4,8 +4,8 @@
     .fingerprint = 0xdc36dc929455d39b, // Changing this has security and trust implications.
     .minimum_zig_version = "0.14.0",
     .dependencies = .{ .zig_open = .{
-        .url = "git+https://github.com/Tired-Fox/zig-open?ref=main#96e48a7bd98959e7ea2998c43041f6d85236dd6e",
-        .hash = "zig_open-0.0.0-RAkOIHAkAAAzRzdiL0DHRd7gYiDkQgaYtQcXHman27r3",
+        .url = "git+https://github.com/Tired-Fox/zig-open?ref=main#88dc8297be31059713ca54474d9e1be11fce854d",
+        .hash = "zig_open-0.0.0-RAkOIJUlAAAewxaU6ltsXHKvr1CTm5Xqe7UWb00worr8",
     }, .dotenvy = .{
         .url = "git+https://github.com/Tired-Fox/dotenvy?ref=main#c43c40cd2ba9d46648800b9d033e33fab66a49ab",
         .hash = "dotenvy-0.0.1-V7dI1g4VAAC3RQEDPgi0h-O52x1aIToH6xOODd6O6jAA",
