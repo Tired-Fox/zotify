@@ -5,33 +5,20 @@ const reqwest = @import("request.zig");
 
 const Result = @import("api/common.zig").Result;
 const Cursor = @import("api/common.zig").Cursor;
+const Paginated = @import("api/common.zig").Paginated;
 const Uri = @import("api/common.zig").Uri;
+
 pub const player = @import("api/player.zig");
+pub const playlist = @import("api/playlist.zig");
+pub const user = @import("api/user.zig");
 
 fn unwrap(allocator: std.mem.Allocator, response: *reqwest.Response) !void {
     switch (response.status()) {
         .ok, .no_content => return,
-        .unauthorized => {
-            const body = try response.body(allocator);
-            defer allocator.free(body);
-
-            std.log.err("{s}", .{ body });
-            return error.BadOrExpiredToken;
-        },
-        .too_many_requests => {
-            const body = try response.body(allocator);
-            defer allocator.free(body);
-
-            std.log.err("{s}", .{ body });
-            return error.RateLimit;
-        },
-        .forbidden => {
-            const body = try response.body(allocator);
-            defer allocator.free(body);
-
-            std.log.err("{s}", .{ body });
-            return error.BadOAuthRequest;
-        },
+        .unauthorized => return error.BadOrExpiredToken,
+        .too_many_requests => return error.RateLimit,
+        .forbidden => return error.BadOAuthRequest,
+        .not_found => return error.NoActiveDevice,
         else => {
             const body = try response.body(allocator);
             defer allocator.free(body);
@@ -62,9 +49,38 @@ pub const SpotifyClient = struct {
         self.oauth.deinit();
     }
 
+    // ================[ USER ]================
+
     /// Get the current user's playback state
     ///
-    /// Caller is responsible for freeing memory allocated. This can be done by calling `deinit` on `PlayerState`.
+    /// Caller is responsible for freeing memory allocated
+    pub fn profile(self: *@This(), allocator: std.mem.Allocator, user_id: ?[]const u8) !Result(user.Profile) {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        const base = if (user_id) |u|
+            try std.fmt.allocPrint(allocator, "https://api.spotify.com/v1/users/{s}", .{ u })
+        else
+            "https://api.spotify.com/v1/me";
+
+        var request = try reqwest.Request.get(arena.allocator(), base, &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+
+        const body = try response.body(arena.allocator());
+        return try .fromJsonLeaky(allocator, body);
+    }
+
+    // ================[ PLAYER ]================
+
+    /// Get the current user's playback state
+    ///
+    /// Caller is responsible for freeing memory allocated
     pub fn playbackState(self: *@This(), allocator: std.mem.Allocator, options: player.Options) !?Result(player.PlayerState) {
         try self.oauth.refresh();
         if (self.oauth.token == null) return error.Authorization;
@@ -89,7 +105,7 @@ pub const SpotifyClient = struct {
 
     /// Get the currently playing track for the current user
     ///
-    /// Caller is responsible for freeing memory allocated. This can be done by calling `deinit` on `PlayerState`.
+    /// Caller is responsible for freeing memory allocated
     pub fn currentlyPlaying(self: *@This(), allocator: std.mem.Allocator, options: player.Options) !Result(player.PlayerState) {
         try self.oauth.refresh();
         if (self.oauth.token == null) return error.Authorization;
@@ -111,7 +127,7 @@ pub const SpotifyClient = struct {
 
     /// Get the current user's playback state
     ///
-    /// Caller is responsible for freeing memory allocated. This can be done by calling `deinit` on `PlayerState`.
+    /// Caller is responsible for freeing memory allocated
     pub fn devices(self: *@This(), allocator: std.mem.Allocator) !Result([]player.Device) {
         try self.oauth.refresh();
         if (self.oauth.token == null) return error.Authorization;
@@ -327,6 +343,8 @@ pub const SpotifyClient = struct {
     }
 
     /// Get the user's recently played items
+    ///
+    /// Caller is responsible for freeing memory allocated
     pub fn recentItems(self: *@This(), allocator: std.mem.Allocator, limit: ?u8, timestamp: ?player.RecentlyPlayed) !Result(Cursor(player.PlayHistory)) {
         try self.oauth.refresh();
         if (self.oauth.token == null) return error.Authorization;
@@ -350,6 +368,8 @@ pub const SpotifyClient = struct {
     }
 
     /// Get the user's queue
+    ///
+    /// Caller is responsible for freeing memory allocated
     pub fn queue(self: *@This(), allocator: std.mem.Allocator) !Result(player.Queue) {
         try self.oauth.refresh();
         if (self.oauth.token == null) return error.Authorization;
@@ -386,5 +406,36 @@ pub const SpotifyClient = struct {
 
         var response = try request.send(arena.allocator());
         try unwrap(arena.allocator(), &response);
+    }
+
+    // ================[ PLAYLIST ]================
+
+    /// Get a user's playlists.
+    ///
+    /// If the user id is not provided then it is assumed to be the current user.
+    ///
+    /// Caller is responsible for freeing memory allocated
+    pub fn playlists(self: *@This(), allocator: std.mem.Allocator, user_id: ?[]const u8, limit: ?u8, offset: ?usize) !Result(Paginated(playlist.SimplifiedPlaylist)) {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        const base = if (user_id) |u|
+            try std.fmt.allocPrint(arena.allocator(), "https://api.spotify.com/v1/users/{s}/playlists", .{ u })
+        else
+            "https://api.spotify.com/v1/me/playlists";
+
+        var request = try reqwest.Request.get(arena.allocator(), base, &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        if (limit) |u| try request.param("limit", u);
+        if (offset) |u| try request.param("offset", u);
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+
+        const body = try response.body(arena.allocator());
+        return try .fromJsonLeaky(allocator, body);
     }
 };

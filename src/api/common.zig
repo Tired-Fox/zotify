@@ -142,9 +142,9 @@ pub fn Map(T: type) type {
 }
 
 pub const Image = struct {
+    height: ?usize = null,
+    width: ?usize = null,
     url: []const u8,
-    height: usize,
-    width: usize,
 };
 
 pub const Cursors = struct {
@@ -162,3 +162,47 @@ pub fn Cursor(T: type) type {
         cursors: ?Cursors = null,
     };
 }
+
+pub fn Paginated(T: type) type {
+    return struct {
+        href: []const u8,
+        limit: u8,
+        offset: usize,
+        total: usize,
+        next: ?[]const u8 = null,
+        previous: ?[]const u8 = null,
+        items: []T,
+
+        pub fn jsonStringify(self: *const @This(), writer: anytype) !void {
+            try writer.beginObject();
+                try writer.objectField("href"); try writer.write(self.href);
+                try writer.objectField("limit"); try writer.write(self.limit);
+                try writer.objectField("offset"); try writer.write(self.offset);
+                try writer.objectField("total"); try writer.write(self.total);
+
+                if (self.next) |next| {
+                    try writer.objectField("next"); try writer.write(next);
+                }
+                if (self.previous) |previous| {
+                    try writer.objectField("previous"); try writer.write(previous);
+                }
+
+                try writer.objectField("items"); try writer.write(self.items);
+            try writer.endObject();
+        }
+    };
+}
+
+pub const Followers = struct {
+    href: ?[]const u8 = null,
+    total: usize,
+};
+
+pub const Owner = struct {
+    external_urls: ExternalUrls,
+    followers: ?Followers = null,
+    href: []const u8,
+    id: []const u8,
+    uri: []const u8,
+    display_name: ?[]const u8 = null,
+};

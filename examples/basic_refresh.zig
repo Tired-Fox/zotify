@@ -26,5 +26,8 @@ pub fn main() !void {
     };
     defer client.deinit();
 
-    try client.addItemToQueue(.{ .type = .track, .uri = "6EdnztPkhHINbu8Y9NgIIR" }, null);
+    const playlists = try client.playlists(allocator, null, null, null);
+    defer playlists.deinit();
+
+    try std.json.stringify(playlists.value, .{ .whitespace = .indent_2 }, std.io.getStdOut().writer());
 }
