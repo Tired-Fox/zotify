@@ -102,23 +102,51 @@ pub const QueryMapUnmanaged = struct {
         self.items.deinit(allocator);
     }
 
+    fn formatValue(value: anytype, writer: anytype) !void {
+        const T = @TypeOf(value);
+
+        if (T == u8) {
+            try writer.writeByte(value);
+            return;
+        }
+
+        switch (@typeInfo(@TypeOf(value))) {
+            .float, .comptime_float, .comptime_int, .int => {
+                try writer.print("{d}", .{ value });
+            },
+            .bool => {
+                try writer.print("{?}", .{ value });
+            },
+            .pointer => |p| {
+                if (p.size == .slice) {
+                    switch (p.child) {
+                        u8 => try writer.print("{s}", .{ value }),
+                        else => {
+                            for (value, 0..) |v, i| {
+                                if (i > 0) try writer.writeByte(',');
+                                try formatValue(v, writer);
+                            }
+                        }
+                    }
+                } else {
+                    try writer.print("{s}", .{ value });
+                }
+            },
+            else => {
+                try writer.print("{s}", .{ value });
+            }
+        }
+    }
+
     pub fn put(self: *@This(), allocator: std.mem.Allocator, key: []const u8, value: anytype) !void {
         const entry = try self.items.getOrPut(allocator, try allocator.dupe(u8, key));
         if (entry.found_existing) {
             allocator.free(entry.value_ptr.*);
         }
 
-        switch (@typeInfo(@TypeOf(value))) {
-            .float, .comptime_float, .comptime_int, .int => {
-                entry.value_ptr.* = try std.fmt.allocPrint(allocator, "{d}", .{ value });
-            },
-            .bool => {
-                entry.value_ptr.* = try std.fmt.allocPrint(allocator, "{?}", .{ value });
-            },
-            else => {
-                entry.value_ptr.* = try std.fmt.allocPrint(allocator, "{s}", .{ value });
-            }
-        }
+        var v = std.ArrayList(u8).init(allocator);
+        try formatValue(value, v.writer());
+        entry.value_ptr.* = try v.toOwnedSlice();
     }
 
     pub fn get(self: *@This(), key: []const u8) ?[]const u8 {
@@ -346,6 +374,10 @@ pub const Request = struct {
         return try @This().init(allocator, .PUT, uri, headers);
     }
 
+    pub fn delete(allocator: std.mem.Allocator, uri: []const u8, headers: []const std.http.Header) !@This() {
+        return try @This().init(allocator, .DELETE, uri, headers);
+    }
+
     /// Add a query parameter to the uri
     pub fn param(self: *@This(), key: []const u8, value: anytype) !void {
         try self.query.put(self.arena.allocator(), key, value);
@@ -462,8 +494,8 @@ pub const Request = struct {
             .extra_headers = headers 
         });
 
-        if (self.method != .GET and self.method != .HEAD) {
-            if (self.content) |cnt| req.transfer_encoding = .{ .content_length = cnt.len };
+        if (self.method.requestHasBody() and self.content != null) {
+            req.transfer_encoding = .{ .content_length = self.content.?.len };
         }
 
         try req.send();

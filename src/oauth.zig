@@ -267,6 +267,9 @@ pub const Scopes = packed struct(u17) {
     }
 };
 
+// The allocator held in this struct is used for allocating the memory for
+// the auth token along with sending auth request and hosting a mini server
+// to handle spotify's redirect and auth flow.
 pub const OAuth = struct {
     arena: std.heap.ArenaAllocator,
 
@@ -302,6 +305,11 @@ pub const OAuth = struct {
         ///
         /// This also allows for the token to be loaded from the cache
         /// during the first token refresh.
+        ///
+        /// The location is relative to the system's `data` directory.
+        ///
+        /// `cache` path is determined via https://github.com/ziglibs/known-folders
+        /// using the `getPath(a, .data)` method call.
         cache_path: ?[]const u8,
     };
 

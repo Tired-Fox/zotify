@@ -8,7 +8,6 @@ const SpotifyClient = zotify.SpotifyClient;
 const CONTENT: []const u8 = @embedFile("redirect.html");
 
 pub fn main() !void {
-    // Create a general purpose allocator
     var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -26,8 +25,9 @@ pub fn main() !void {
     };
     defer client.deinit();
 
-    const playlists = try client.playlists(allocator, null, null, null);
-    defer playlists.deinit();
-
-    try std.json.stringify(playlists.value, .{ .whitespace = .indent_2 }, std.io.getStdOut().writer());
+    const following = try client.checkFollowPlaylist("37i9dQZF1EIhJY1EuDgoyf");
+    std.debug.print("{?}\n", .{ following });
+    // defer following.deinit();
+    //
+    // try std.json.stringify(following.value, .{ .whitespace = .indent_2 }, std.io.getStdOut().writer());
 }

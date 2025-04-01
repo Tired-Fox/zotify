@@ -1,7 +1,348 @@
 const std = @import("std");
 const common = @import("common.zig");
+
+const reqwest = @import("../request.zig");
+const SpotifyClient = @import("../api.zig").SpotifyClient;
+const unwrap = @import("../api.zig").unwrap;
+const Result = common.Result;
+const Cursor = common.Cursor;
+const Uri = common.Uri;
+const Paginated = common.Paginated;
+
 const Track = @import("track.zig").Track;
 const Episode = @import("episode.zig").Episode;
+
+pub const PlayerApi = struct {
+    /// Get the current user's playback state
+    ///
+    /// Caller is responsible for freeing allocated memory
+    pub fn playbackState(self: *SpotifyClient, allocator: std.mem.Allocator, options: Options) !?Result(PlayerState) {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.get(arena.allocator(), "https://api.spotify.com/v1/me/player", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        if (options.market) |market| try request.param("market", market);
+        if (options.additional_types) |additional_types| try request.param("additional_types", additional_types);
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+
+        if (response.status() == .ok) {
+            const body = try response.body(arena.allocator());
+            return try .fromJsonLeaky(allocator, body);
+        }
+        return null;
+    }
+
+    /// Get the currently playing track for the current user
+    ///
+    /// Caller is responsible for freeing allocated memory
+    pub fn currentlyPlaying(self: *SpotifyClient, allocator: std.mem.Allocator, options: Options) !Result(PlayerState) {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.get(arena.allocator(), "https://api.spotify.com/v1/me/player/currently-playing", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        if (options.market) |market| try request.param("market", market);
+        if (options.additional_types) |additional_types| try request.param("additional_types", additional_types);
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+
+        const body = try response.body(arena.allocator());
+        return try .fromJsonLeaky(allocator, body);
+    }
+
+    /// Get the current user's playback state
+    ///
+    /// Caller is responsible for freeing allocated memory
+    pub fn devices(self: *SpotifyClient, allocator: std.mem.Allocator) !Result([]Device) {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.get(arena.allocator(), "https://api.spotify.com/v1/me/player/devices", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+
+        const body = try response.body(arena.allocator());
+        return try .fromWrappedJsonLeaky(.devices, allocator, body);
+    }
+
+    /// Transfer the playback to a specific `device`
+    ///
+    /// **play**:
+    ///     - `true`: ensure that playback happens on the device
+    ///     - `false`: keep the current playback state
+    pub fn transferPlayback(self: *SpotifyClient, device_id: []const u8, start: bool) !void {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.put(arena.allocator(), "https://api.spotify.com/v1/me/player", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        try request.json(.{
+            .device_ids = [1][]const u8 { device_id },
+            .play = start,
+        });
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+    }
+
+    /// Start or resume playback with a specific device on the user's account.
+    ///
+    /// If device is not specified the currently active device is used.
+    ///
+    /// The user may also pass a context_uri with an optional offset or a list
+    /// of Uri to play in the queue.
+    pub fn play(self: *SpotifyClient, device_id: ?[]const u8, context: ?StartResume) !void {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.put(arena.allocator(), "https://api.spotify.com/v1/me/player/play", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        if (device_id) |device| {
+            try request.param("device_id", device);
+        }
+
+        if (context) |ctx|
+            try request.json(ctx)
+        else
+            try request.header("Content-Type", "application/json");
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+    }
+
+    /// Pause playback on the user's account
+    ///
+    /// If device is not specified the currently active device is used.
+    pub fn pause(self: *SpotifyClient, device_id: ?[]const u8) !void {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.put(arena.allocator(), "https://api.spotify.com/v1/me/player/pause", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        if (device_id) |device| {
+            try request.param("device_id", device);
+        }
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+    }
+
+    /// Skips to the next item in the user's queue.
+    ///
+    /// If device is not specified the currently active device is used.
+    pub fn next(self: *SpotifyClient, device_id: ?[]const u8) !void {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.post(arena.allocator(), "https://api.spotify.com/v1/me/player/next", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        if (device_id) |device| {
+            try request.param("device_id", device);
+        }
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+    }
+
+    /// Skips to the previous item in the user's queue.
+    ///
+    /// If device is not specified the currently active device is used.
+    pub fn previous(self: *SpotifyClient, device_id: ?[]const u8) !void {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.post(arena.allocator(), "https://api.spotify.com/v1/me/player/previous", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        if (device_id) |device| {
+            try request.param("device_id", device);
+        }
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+    }
+
+    /// Seek to a specific millisecond position in the user's currently playing item
+    ///
+    /// If device is not specified the currently active device is used.
+    pub fn seekTo(self: *SpotifyClient, position: usize, device_id: ?[]const u8) !void {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.put(arena.allocator(), "https://api.spotify.com/v1/me/player/seek", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        try request.param("position_ms", position);
+        if (device_id) |device| {
+            try request.param("device_id", device);
+        }
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+    }
+
+    /// Set the repeat state for the user's playback
+    ///
+    /// If device is not specified the currently active device is used.
+    pub fn repeat(self: *SpotifyClient, state: Repeat, device_id: ?[]const u8) !void {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.put(arena.allocator(), "https://api.spotify.com/v1/me/player/repeat", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        try request.param("state", state);
+        if (device_id) |device| {
+            try request.param("device_id", device);
+        }
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+    }
+
+    /// Set the shuffle state for the user's playback
+    ///
+    /// If device is not specified the currently active device is used.
+    pub fn shuffle(self: *SpotifyClient, state: bool, device_id: ?[]const u8) !void {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.put(arena.allocator(), "https://api.spotify.com/v1/me/player/shuffle", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        try request.param("state", state);
+        if (device_id) |device| {
+            try request.param("device_id", device);
+        }
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+    }
+
+    /// Set the volume percent for the user's playback
+    ///
+    /// If device is not specified the currently active device is used.
+    ///
+    /// The percent is automatically clamped at 100.
+    pub fn volume(self: *SpotifyClient, percent: u8, device_id: ?[]const u8) !void {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.put(arena.allocator(), "https://api.spotify.com/v1/me/player/volume", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        try request.param("volume_percent", @min(percent, 100));
+        if (device_id) |device| {
+            try request.param("device_id", device);
+        }
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+    }
+
+    /// Get the user's recently played items
+    ///
+    /// Caller is responsible for freeing allocated memory
+    pub fn recentItems(self: *SpotifyClient, allocator: std.mem.Allocator, limit: ?u8, timestamp: ?RecentlyPlayed) !Result(Cursor(PlayHistory)) {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.get(arena.allocator(), "https://api.spotify.com/v1/me/player/recently-played", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        if (limit) |l| try request.param("limit", l);
+        if (timestamp) |t| switch (t) {
+            .before => |before| try request.param("before", before),
+            .after => |after| try request.param("after", after),
+        };
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+
+        const body = try response.body(arena.allocator());
+        return try .fromJsonLeaky(allocator, body);
+    }
+
+    /// Get the user's queue
+    ///
+    /// Caller is responsible for freeing allocated memory
+    pub fn queue(self: *SpotifyClient, allocator: std.mem.Allocator) !Result(Queue) {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.get(arena.allocator(), "https://api.spotify.com/v1/me/player/queue", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+
+        const body = try response.body(arena.allocator());
+        return try .fromJsonLeaky(allocator, body);
+    }
+
+    /// Add item to the user's queue
+    ///
+    /// If device is not specified the currently active device is used.
+    pub fn addItemToQueue(self: *SpotifyClient, uri: Uri, device_id: ?[]const u8) !void {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var request = try reqwest.Request.post(arena.allocator(), "https://api.spotify.com/v1/me/player/queue", &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+        try request.param("uri", uri);
+        if (device_id) |device| {
+            try request.param("device_id", device);
+        }
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response);
+    }
+};
 
 pub const AdditionalType = enum {
     episode,

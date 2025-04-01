@@ -81,6 +81,29 @@ pub fn Result(T: type) type {
                 .arena = arena,
             };
         }
+
+        /// The caller owns the memory and is responsible for freeing it
+        pub fn fromSingleWrappedArrayJsonLeaky(allocator: std.mem.Allocator, content: []const u8) !@This() {
+            var arena = std.heap.ArenaAllocator.init(allocator);
+            errdefer arena.deinit();
+            const allo = arena.allocator();
+
+            const parsed = try std.json.parseFromSlice(std.json.Value, allo, content, .{ .ignore_unknown_fields = true });
+            defer parsed.deinit();
+
+            if (parsed.value != .array or parsed.value.array.items.len == 0) return error.UnexpectedToken;
+            const data = parsed.value.array.items[0];
+
+            return .{
+                .value = try std.json.parseFromValueLeaky(
+                    T,
+                    allo,
+                    data,
+                    .{ .ignore_unknown_fields = true }
+                ),
+                .arena = arena,
+            };
+        }
     };
 }
 
@@ -148,8 +171,8 @@ pub const Image = struct {
 };
 
 pub const Cursors = struct {
-    before: i64,
-    after: i64,
+    before: ?i64 = null,
+    after: ?i64 = null,
 };
 
 pub fn Cursor(T: type) type {
@@ -205,4 +228,10 @@ pub const Owner = struct {
     id: []const u8,
     uri: []const u8,
     display_name: ?[]const u8 = null,
+};
+
+pub const TimeRange = enum {
+    long_term,
+    medium_term,
+    short_term,
 };

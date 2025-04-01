@@ -3,16 +3,20 @@
     .version = "0.0.0",
     .fingerprint = 0xdc36dc929455d39b, // Changing this has security and trust implications.
     .minimum_zig_version = "0.14.0",
-    .dependencies = .{ .zig_open = .{
-        .url = "git+https://github.com/Tired-Fox/zig-open?ref=main#88dc8297be31059713ca54474d9e1be11fce854d",
-        .hash = "zig_open-0.0.0-RAkOIJUlAAAewxaU6ltsXHKvr1CTm5Xqe7UWb00worr8",
-    }, .dotenvy = .{
-        .url = "git+https://github.com/Tired-Fox/dotenvy?ref=main#c43c40cd2ba9d46648800b9d033e33fab66a49ab",
-        .hash = "dotenvy-0.0.1-V7dI1g4VAAC3RQEDPgi0h-O52x1aIToH6xOODd6O6jAA",
-    }, .known_folders = .{
-        .url = "git+https://github.com/ziglibs/known-folders?ref=master#aa24df42183ad415d10bc0a33e6238c437fc0f59",
-        .hash = "known_folders-0.0.0-Fy-PJtLDAADGDOwYwMkVydMSTp_aN-nfjCZw6qPQ2ECL",
-    } },
+    .dependencies = .{
+        .zig_open = .{
+            .url = "git+https://github.com/Tired-Fox/zig-open?ref=main#88dc8297be31059713ca54474d9e1be11fce854d",
+            .hash = "zig_open-0.0.0-RAkOIJUlAAAewxaU6ltsXHKvr1CTm5Xqe7UWb00worr8",
+        },
+        .dotenvy = .{
+            .url = "git+https://github.com/Tired-Fox/dotenvy?ref=main#c43c40cd2ba9d46648800b9d033e33fab66a49ab",
+            .hash = "dotenvy-0.0.1-V7dI1g4VAAC3RQEDPgi0h-O52x1aIToH6xOODd6O6jAA",
+        },
+        .known_folders = .{
+            .url = "git+https://github.com/ziglibs/known-folders?ref=master#aa24df42183ad415d10bc0a33e6238c437fc0f59",
+            .hash = "known_folders-0.0.0-Fy-PJtLDAADGDOwYwMkVydMSTp_aN-nfjCZw6qPQ2ECL",
+        }
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
