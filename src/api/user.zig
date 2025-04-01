@@ -34,7 +34,7 @@ pub const UserApi = struct {
         try request.bearerAuth(self.oauth.token.?.access);
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
 
         const body = try response.body(arena.allocator());
         return try .fromJsonLeaky(allocator, body);
@@ -64,7 +64,7 @@ pub const UserApi = struct {
         if (offset) |o| try request.param("offset", o);
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
 
         const body = try response.body(arena.allocator());
         return try .fromJsonLeaky(allocator, body);
@@ -91,7 +91,7 @@ pub const UserApi = struct {
         });
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
     }
 
     /// Remove the current user as a follower of a playlist
@@ -111,7 +111,7 @@ pub const UserApi = struct {
         try request.bearerAuth(self.oauth.token.?.access);
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
     }
 
     /// Get the current user's followed artists
@@ -134,7 +134,7 @@ pub const UserApi = struct {
         if (limit) |l| try request.param("limit", l);
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
 
         const body = try response.body(arena.allocator());
         return try .fromWrappedJsonLeaky(.artists, allocator, body);
@@ -161,7 +161,7 @@ pub const UserApi = struct {
         });
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
     }
 
     /// Remove the current user as a follower of one or more artists or spotify users
@@ -182,7 +182,7 @@ pub const UserApi = struct {
         try request.param("ids", ids);
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
     }
 
     /// Check if the current user is following one or move artists or spotify users
@@ -203,7 +203,7 @@ pub const UserApi = struct {
         try request.param("ids", ids);
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
 
         const body = try response.body(arena.allocator());
         return try .fromJsonLeaky(allocator, body);
@@ -226,7 +226,7 @@ pub const UserApi = struct {
         try request.bearerAuth(self.oauth.token.?.access);
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
 
         const body = try response.body(arena.allocator());
         const result = try std.json.parseFromSliceLeaky([]bool, arena.allocator(), body, .{ .ignore_unknown_fields = true });

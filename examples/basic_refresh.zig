@@ -25,9 +25,23 @@ pub fn main() !void {
     };
     defer client.deinit();
 
-    const following = try client.checkFollowPlaylist("37i9dQZF1EIhJY1EuDgoyf");
-    std.debug.print("{?}\n", .{ following });
-    // defer following.deinit();
-    //
-    // try std.json.stringify(following.value, .{ .whitespace = .indent_2 }, std.io.getStdOut().writer());
+    // https://open.spotify.com/playlist/37i9dQZF1EIhJY1EuDgoyf?si=tm-wMX9ZSVmxCFrCPYS35w
+    var items = try client.userPlaylists(allocator, null, 50, 0);
+    defer items.deinit();
+
+    for (items.value.items, 0..) |item, i| {
+        std.debug.print("{d}. {s} {s}\n", .{i, item.id, item.name});
+    }
+
+    while (items.value.offset + items.value.limit < items.value.total) {
+        const limit = items.value.limit;
+        const offset = items.value.offset + limit;
+        items.deinit();
+
+        items = try client.userPlaylists(allocator, null, limit, offset);
+        for (items.value.items, items.value.offset..) |item, i| {
+            std.debug.print("{d}. {s} {s}\n", .{i, item.id, item.name});
+        }
+    }
+    // try std.json.stringify(items.value, .{ .whitespace = .indent_2 }, std.io.getStdOut().writer());
 }

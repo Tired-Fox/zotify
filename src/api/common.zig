@@ -235,3 +235,45 @@ pub const TimeRange = enum {
     medium_term,
     short_term,
 };
+
+pub const AdditionalType = enum {
+    episode,
+
+    pub fn format(
+        self: *const @This(),
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        switch (self.*) {
+            .episode => try writer.writeAll("episode")
+        }
+    }
+};
+
+pub const Item = union(enum) {
+    const Track = @import("track.zig").Track;
+    const Episode = @import("episode.zig").Episode;
+
+    track: Track,
+    episode: Episode,
+
+    pub fn jsonStringify(self: *const @This(), writer: anytype) !void {
+        switch (self.*) {
+            .track => |track| try writer.write(track),
+            .episode => |episode| try writer.write(episode),
+        }
+    }
+
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) std.json.ParseFromValueError!@This() {
+        if (source != .object) return error.UnexpectedToken;
+        if (std.mem.eql(u8, source.object.get("type").?.string, "track")) {
+            return .{
+                .track = try std.json.innerParseFromValue(Track, allocator, source, options),
+            };
+        }
+        return .{
+            .episode = try std.json.innerParseFromValue(Episode, allocator, source, options),
+        };
+    }
+};

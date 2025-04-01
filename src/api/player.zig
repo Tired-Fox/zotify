@@ -8,6 +8,8 @@ const Result = common.Result;
 const Cursor = common.Cursor;
 const Uri = common.Uri;
 const Paginated = common.Paginated;
+const AdditionalType = common.AdditionalType;
+const Item = common.Item;
 
 const Track = @import("track.zig").Track;
 const Episode = @import("episode.zig").Episode;
@@ -29,7 +31,7 @@ pub const PlayerApi = struct {
         if (options.additional_types) |additional_types| try request.param("additional_types", additional_types);
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
 
         if (response.status() == .ok) {
             const body = try response.body(arena.allocator());
@@ -54,7 +56,7 @@ pub const PlayerApi = struct {
         if (options.additional_types) |additional_types| try request.param("additional_types", additional_types);
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
 
         const body = try response.body(arena.allocator());
         return try .fromJsonLeaky(allocator, body);
@@ -74,7 +76,7 @@ pub const PlayerApi = struct {
         try request.bearerAuth(self.oauth.token.?.access);
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
 
         const body = try response.body(arena.allocator());
         return try .fromWrappedJsonLeaky(.devices, allocator, body);
@@ -100,7 +102,7 @@ pub const PlayerApi = struct {
         });
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, error.NoActiveDevice);
     }
 
     /// Start or resume playback with a specific device on the user's account.
@@ -128,7 +130,7 @@ pub const PlayerApi = struct {
             try request.header("Content-Type", "application/json");
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, error.NoActiveDevice);
     }
 
     /// Pause playback on the user's account
@@ -148,7 +150,7 @@ pub const PlayerApi = struct {
         }
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, error.NoActiveDevice);
     }
 
     /// Skips to the next item in the user's queue.
@@ -168,7 +170,7 @@ pub const PlayerApi = struct {
         }
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, error.NoActiveDevice);
     }
 
     /// Skips to the previous item in the user's queue.
@@ -188,7 +190,7 @@ pub const PlayerApi = struct {
         }
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, error.NoActiveDevice);
     }
 
     /// Seek to a specific millisecond position in the user's currently playing item
@@ -209,7 +211,7 @@ pub const PlayerApi = struct {
         }
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, error.NoActiveDevice);
     }
 
     /// Set the repeat state for the user's playback
@@ -230,7 +232,7 @@ pub const PlayerApi = struct {
         }
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, error.NoActiveDevice);
     }
 
     /// Set the shuffle state for the user's playback
@@ -251,7 +253,7 @@ pub const PlayerApi = struct {
         }
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, error.NoActiveDevice);
     }
 
     /// Set the volume percent for the user's playback
@@ -274,7 +276,7 @@ pub const PlayerApi = struct {
         }
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, error.NoActiveDevice);
     }
 
     /// Get the user's recently played items
@@ -296,7 +298,7 @@ pub const PlayerApi = struct {
         };
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
 
         const body = try response.body(arena.allocator());
         return try .fromJsonLeaky(allocator, body);
@@ -316,7 +318,7 @@ pub const PlayerApi = struct {
         try request.bearerAuth(self.oauth.token.?.access);
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
+        try unwrap(arena.allocator(), &response, null);
 
         const body = try response.body(arena.allocator());
         return try .fromJsonLeaky(allocator, body);
@@ -336,26 +338,11 @@ pub const PlayerApi = struct {
         try request.bearerAuth(self.oauth.token.?.access);
         try request.param("uri", uri);
         if (device_id) |device| {
-            try request.param("device_id", device);
+            try request.param("device_id", device, error.NoActiveDevice);
         }
 
         var response = try request.send(arena.allocator());
-        try unwrap(arena.allocator(), &response);
-    }
-};
-
-pub const AdditionalType = enum {
-    episode,
-
-    pub fn format(
-        self: *const @This(),
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        switch (self.*) {
-            .episode => try writer.writeAll("episode")
-        }
+        try unwrap(arena.allocator(), &response, null);
     }
 };
 
@@ -399,30 +386,6 @@ pub const Context = struct {
     href: []const u8,
     external_url: ?common.ExternalUrls = null,
     uri: []const u8,
-};
-
-pub const Item = union(enum) {
-    track: Track,
-    episode: Episode,
-
-    pub fn jsonStringify(self: *const @This(), writer: anytype) !void {
-        switch (self.*) {
-            .track => |track| try writer.write(track),
-            .episode => |episode| try writer.write(episode),
-        }
-    }
-
-    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) std.json.ParseFromValueError!@This() {
-        if (source != .object) return error.UnexpectedToken;
-        if (std.mem.eql(u8, source.object.get("type").?.string, "track")) {
-            return .{
-                .track = try std.json.innerParseFromValue(Track, allocator, source, options),
-            };
-        }
-        return .{
-            .episode = try std.json.innerParseFromValue(Episode, allocator, source, options),
-        };
-    }
 };
 
 pub const ContextActions = struct {

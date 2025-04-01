@@ -103,13 +103,6 @@ pub const QueryMapUnmanaged = struct {
     }
 
     fn formatValue(value: anytype, writer: anytype) !void {
-        const T = @TypeOf(value);
-
-        if (T == u8) {
-            try writer.writeByte(value);
-            return;
-        }
-
         switch (@typeInfo(@TypeOf(value))) {
             .float, .comptime_float, .comptime_int, .int => {
                 try writer.print("{d}", .{ value });
