@@ -15,19 +15,21 @@ pub const playlist = @import("api/playlist.zig");
 pub const user = @import("api/user.zig");
 
 pub fn unwrap(allocator: std.mem.Allocator, response: *reqwest.Response, not_found: ?anyerror) !void {
-    switch (response.status()) {
-        .ok, .no_content => return,
-        .unauthorized => return error.BadOrExpiredToken,
-        .too_many_requests => return error.RateLimit,
-        .forbidden => return error.BadOAuthRequest,
-        .not_found => return not_found orelse error.NotFound,
-        else => {
-            const body = try response.body(allocator);
-            defer allocator.free(body);
+    switch (response.status().class()) {
+        .informational, .success, .redirect => return,
+        else => switch (response.status()) {
+            .unauthorized => return error.BadOrExpiredToken,
+            .too_many_requests => return error.RateLimit,
+            .forbidden => return error.BadOAuthRequest,
+            .not_found => return not_found orelse error.NotFound,
+            else => {
+                const body = try response.body(allocator);
+                defer allocator.free(body);
 
-            std.log.err("[{any}] {s}", .{ response.status(), body });
-            return error.Unknown;
-        },
+                std.log.err("[{any}] {s}", .{ response.status(), body });
+                return error.Unknown;
+            },
+        }
     }
 }
 

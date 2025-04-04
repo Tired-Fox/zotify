@@ -89,6 +89,62 @@ pub const PlaylistApi = struct {
         return try .fromJsonLeaky(allocator, body);
     }
 
+    /// Get full details of the items of a playlist owned by a Spotify user.
+    pub fn updatePlaylistItems(
+        self: *SpotifyClient,
+        allocator: std.mem.Allocator,
+        playlist_id: []const u8,
+        options: UpdateItemsOptions,
+    ) !Result([]const u8) {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        const base = try std.fmt.allocPrint(arena.allocator(), "https://api.spotify.com/v1/playlists/{s}/tracks", .{ playlist_id });
+        var request = try reqwest.Request.put(arena.allocator(), base, &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+
+        try request.json(options);
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response, null);
+
+        const body = try response.body(arena.allocator());
+        return try .fromWrappedJsonLeaky(.snapshot_id, allocator, body);
+    }
+
+    /// Get full details of the items of a playlist owned by a Spotify user.
+    pub fn addItemsToPlaylist(
+        self: *SpotifyClient,
+        allocator: std.mem.Allocator,
+        playlist_id: []const u8,
+        uris: []const common.Uri,
+        position: usize,
+    ) !Result([]const u8) {
+        try self.oauth.refresh();
+        if (self.oauth.token == null) return error.Authorization;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        const base = try std.fmt.allocPrint(arena.allocator(), "https://api.spotify.com/v1/playlists/{s}/tracks", .{ playlist_id });
+        var request = try reqwest.Request.post(arena.allocator(), base, &.{});
+        try request.bearerAuth(self.oauth.token.?.access);
+
+        try request.json(.{
+            .uris = uris,
+            .position = position
+        });
+
+        var response = try request.send(arena.allocator());
+        try unwrap(arena.allocator(), &response, null);
+
+        const body = try response.body(arena.allocator());
+        return try .fromWrappedJsonLeaky(.snapshot_id, allocator, body);
+    }
+
     /// Get a user's playlists.
     ///
     /// If the user id is not provided then it is assumed to be the current user.
@@ -182,6 +238,25 @@ pub const Details = struct {
             if (self.name) |value| {
                 try writer.objectField("name"); try writer.write(value);
             }
+        try writer.endObject();
+    }
+};
+
+pub const UpdateItemsOptions = struct {
+    uris: ?[][]const u8,
+    range_start: ?usize,
+    insert_before: ?usize,
+    range_length: ?usize,
+    snapshot_id: ?[]const u8,
+
+    pub fn jsonStringify(self: *const @This(), writer: anytype) !void {
+        try writer.beginObject();
+        inline for (@typeInfo(@This()).@"struct".fields) |field| {
+            if (@field(self, field.name)) |value| {
+                try writer.objectField(field.name);
+                try writer.write(value);
+            }
+        }
         try writer.endObject();
     }
 };

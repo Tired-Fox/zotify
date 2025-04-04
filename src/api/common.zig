@@ -16,6 +16,20 @@ pub const Uri = struct {
     type: Resource,
     uri: []const u8,
 
+    pub fn album(uri: []const u8) @This() { return .{ .type = .album, .uri = uri }; }
+    pub fn playlist(uri: []const u8) @This() { return .{ .type = .playlist, .uri = uri }; }
+    pub fn show(uri: []const u8) @This() { return .{ .type = .show, .uri = uri }; }
+    pub fn artist(uri: []const u8) @This() { return .{ .type = .artist, .uri = uri }; }
+    pub fn track(uri: []const u8) @This() { return .{ .type = .track, .uri = uri }; }
+    pub fn episode(uri: []const u8) @This() { return .{ .type = .episode, .uri = uri }; }
+    pub fn user(uri: []const u8) @This() { return .{ .type = .user, .uri = uri }; }
+    pub fn collection(uri: []const u8) @This() { return .{ .type = .collection, .uri = uri }; }
+    pub fn your_episodes(uri: []const u8) @This() { return .{ .type = .your_episodes, .uri = uri }; }
+
+    pub fn jsonStringify(self: *const @This(), writer: anytype) !void {
+        try writer.print("\"{s}\"", .{ self });
+    }
+
     pub fn format(
         self: *const @This(),
         comptime _: []const u8,
